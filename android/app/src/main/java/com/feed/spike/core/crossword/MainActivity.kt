@@ -1,4 +1,4 @@
-package com.feedspikecorecrossword
+package com.feed.spike.core.crossword
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

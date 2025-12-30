@@ -1,4 +1,4 @@
-package com.feedspikecorecrossword
+package com.feed.spike.core.crossword
 
 import android.app.Application
 import com.facebook.react.PackageList
