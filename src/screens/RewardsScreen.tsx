@@ -40,7 +40,6 @@ const STORAGE_FRUITS = 'spike_fruits_v1';
 
 const COLS = 3;
 const CONTENT_OFFSET_Y = 20;
-const BACK_IN_PAGER = true;
 
 function safeParseNumberArray(raw: string | null): number[] {
   try {
@@ -107,9 +106,7 @@ export default function RewardsScreen({ navigation }: Props) {
       if (Number.isFinite(fruitsFromStorage) && fruitsFromStorage !== fixedFruits) {
         await AsyncStorage.setItem(STORAGE_FRUITS, String(fixedFruits));
       }
-    } catch {
-
-    }
+    } catch {}
   };
 
   useEffect(() => {
@@ -160,9 +157,15 @@ export default function RewardsScreen({ navigation }: Props) {
   return (
     <ImageBackground source={BG} style={styles.bg} resizeMode="cover">
       <View style={[styles.topTitleRow, { paddingTop: topPad }]}>
-        <View style={{ width: 34, height: 34 }} />
+        <Pressable 
+          onPress={() => navigation.goBack()} 
+          style={[styles.backBtn, { position: 'absolute', left: 18, top: topPad }]} 
+          hitSlop={10}
+        >
+          <Text style={styles.backText}>‹</Text>
+        </Pressable>
+        
         <Text style={styles.title}>Rewards</Text>
-        <View style={{ width: 34, height: 34 }} />
       </View>
 
       <Animated.View
@@ -180,10 +183,6 @@ export default function RewardsScreen({ navigation }: Props) {
         }}
       >
         <View style={[styles.pagerBar, { paddingHorizontal: PAD }]}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
-            <Text style={styles.backText}>‹</Text>
-          </Pressable>
-
           <Pressable
             onPress={() => setPage((p) => Math.max(0, p - 1))}
             style={[styles.pagerBtn, page === 0 && styles.pagerBtnDisabled]}
@@ -239,10 +238,11 @@ const styles = StyleSheet.create({
   bg: { flex: 1 },
 
   topTitleRow: {
-    paddingHorizontal: 18,
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center', 
+    minHeight: 44,
   },
 
   title: { color: '#8FE6FF', fontWeight: '900', fontSize: IS_VERY_TINY ? 16 : 18 },
@@ -264,6 +264,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
   backText: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: -1 },
 
@@ -281,7 +282,7 @@ const styles = StyleSheet.create({
   pagerBtnDisabled: { opacity: 0.35 },
   pagerBtnText: { color: '#8FE6FF', fontWeight: '900', fontSize: 13 },
 
-  pageText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 13, minWidth: 60, textAlign: 'center' },
+  pageText: { color: 'rgba(255,255,255,0.75)', fontWeight: '900', fontSize: 13, minWidth: 40, textAlign: 'center' },
 
   rightRow: {
     flexDirection: 'row',
