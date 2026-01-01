@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   menuBtn: {
     height: BTN_H,
     borderRadius: 8,
-    backgroundColor: '#78B8FF',
+    backgroundColor: '#b4a943ff',
     borderWidth: 2,
     borderColor: '#F4B63A',
     alignItems: 'center',

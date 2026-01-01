@@ -1,4 +1,4 @@
-package com.feed.spike.core.crossword
+package com.tocalmcrosswordto
 
 import android.app.Application
 import com.facebook.react.PackageList
