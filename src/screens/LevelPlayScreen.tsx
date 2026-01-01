@@ -1,14 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
   ImageBackground,
-  Keyboard,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,13 +19,14 @@ type Props = NativeStackScreenProps<RootStackParamList, 'LevelPlay'>;
 const { width: W, height: H } = Dimensions.get('window');
 const IS_TINY = H < 690;
 const IS_SMALL = H < 760;
+const IS_VERY_SMALL = H < 640;
 
 const BG = require('../assets/background.png');
 
 type Dir = 'across' | 'down';
 
 type LayoutWord = {
-  num: number; 
+  num: number;
   dir: Dir;
   row: number;
   col: number;
@@ -36,8 +34,8 @@ type LayoutWord = {
 
 type CellKey = string;
 const ck = (r: number, c: number) => `${r},${c}`;
+
 const STORAGE_FRUITS = 'spike_fruits_v1';
-const STORAGE_STAGE = 'spike_stage_v1';
 const STORAGE_DONE_LEVELS = 'crossword_done_levels_v1';
 const STORAGE_UNLOCKED = 'crossword_unlocked_v1';
 
@@ -46,17 +44,17 @@ const MANUAL_LAYOUTS: Record<number, { size: number; words: LayoutWord[] }> = {
     size: 7,
     words: [
       { num: 1, dir: 'down', row: 0, col: 4 },
-      { num: 2, dir: 'down', row: 1, col: 3 }, 
+      { num: 2, dir: 'down', row: 1, col: 3 },
       { num: 3, dir: 'across', row: 2, col: 2 },
-      { num: 4, dir: 'across', row: 3, col: 0 }, 
+      { num: 4, dir: 'across', row: 3, col: 0 },
     ],
   },
   2: {
     size: 7,
     words: [
-      { num: 1, dir: 'down', row: 1, col: 3 }, 
-      { num: 2, dir: 'across', row: 2, col: 1 }, 
-      { num: 3, dir: 'down', row: 0, col: 5 }, 
+      { num: 1, dir: 'down', row: 1, col: 3 },
+      { num: 2, dir: 'across', row: 2, col: 1 },
+      { num: 3, dir: 'down', row: 0, col: 5 },
     ],
   },
 };
@@ -69,13 +67,6 @@ function safeParseNumberArray(raw: string | null): number[] {
   } catch {
     return [];
   }
-}
-
-function onlyAZLast(txt: string) {
-  const up = (txt ?? '').toUpperCase();
-  if (!up) return '';
-  const last = up[up.length - 1];
-  return /[A-Z]/.test(last) ? last : '';
 }
 
 function cellsOfPlacedWord(row: number, col: number, dir: Dir, answer: string) {
@@ -241,7 +232,11 @@ function autoLayout(words: Array<{ answer: string }>) {
     }
   }
 
-  let minR = Infinity, minC = Infinity, maxR = -Infinity, maxC = -Infinity;
+  let minR = Infinity;
+  let minC = Infinity;
+  let maxR = -Infinity;
+  let maxC = -Infinity;
+
   for (const key of grid.keys()) {
     const [rs, cs] = key.split(',');
     const r = Number(rs);
@@ -259,8 +254,8 @@ function autoLayout(words: Array<{ answer: string }>) {
   const wordsOut: LayoutWord[] = placed.map(p => ({
     num: p.num,
     dir: p.dir,
-    row: (p.row - minR) + pad,
-    col: (p.col - minC) + pad,
+    row: p.row - minR + pad,
+    col: p.col - minC + pad,
   }));
 
   return { size: finalSize, words: wordsOut };
@@ -280,7 +275,7 @@ async function completeLevelAndSync(levelId: number, total: number) {
     const has = done.includes(levelId);
     const nextDone = has ? done : [...done, levelId].sort((a, b) => a - b);
 
-    const nextFruits = nextDone.length; 
+    const nextFruits = nextDone.length;
     const nextUnlocked = Math.max(unlocked, Math.min(total, levelId + 1));
 
     await AsyncStorage.multiSet([
@@ -293,6 +288,96 @@ async function completeLevelAndSync(levelId: number, total: number) {
   } catch {
     return null;
   }
+}
+
+function calcKeyboardHeights() {
+  const small = IS_VERY_SMALL;
+  const keyH = small ? 30 : 36;
+  const topBtnH = small ? 36 : 40;
+  const gap = small ? 6 : 8;
+  const padTop = small ? 10 : 12;
+  const padBottom = small ? 10 : 12;
+
+  const kbHeight = padTop + topBtnH + gap + keyH * 3 + gap * 2 + padBottom;
+
+  return { kbHeight, keyH, topBtnH, gap, padTop, padBottom, small };
+}
+
+function KeyboardPanel({
+  onKey,
+  onBackspace,
+  onConfirm,
+  bottomGap,
+}: {
+  onKey: (ch: string) => void;
+  onBackspace: () => void;
+  onConfirm: () => void;
+  bottomGap: number;
+}) {
+  const ROWS: string[][] = [
+    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+    ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
+  ];
+
+  const { kbHeight, keyH, topBtnH, gap, padTop, padBottom, small } = calcKeyboardHeights();
+
+  const renderRow = (letters: string[], rowWidth: number, isLast?: boolean) => {
+    return (
+      <View style={[styles.kbRowNoWrap, { width: rowWidth, marginBottom: isLast ? 0 : gap }]}>
+        {letters.map(ch => (
+          <Pressable
+            key={ch}
+            onPress={() => onKey(ch)}
+            style={[
+              styles.kbKeyFlex,
+              {
+                height: keyH,
+                marginHorizontal: gap / 2,
+              },
+            ]}
+            hitSlop={8}
+          >
+            <Text style={[styles.kbKeyText, { fontSize: small ? 13 : 14 }]}>{ch}</Text>
+          </Pressable>
+        ))}
+      </View>
+    );
+  };
+
+  return (
+    <View style={{ paddingBottom: bottomGap }}>
+      <View
+        style={[
+          styles.kbWrapCompact,
+          {
+            height: kbHeight,
+            paddingTop: padTop,
+            paddingHorizontal: small ? 10 : 12,
+            paddingBottom: padBottom,
+          },
+        ]}
+      >
+        <View style={[styles.kbTopRow, { marginBottom: gap, gap }]}>
+          <Pressable
+            onPress={onBackspace}
+            style={[styles.kbActionBtn, { height: topBtnH, width: small ? 48 : 52 }]}
+            hitSlop={10}
+          >
+            <Text style={[styles.kbActionText, { fontSize: small ? 16 : 18 }]}>⌫</Text>
+          </Pressable>
+
+          <Pressable onPress={onConfirm} style={[styles.kbConfirmBtn, { height: topBtnH }]} hitSlop={10}>
+            <Text style={[styles.kbConfirmText, { fontSize: small ? 12 : 13 }]}>CONFIRM</Text>
+          </Pressable>
+        </View>
+
+        {renderRow(ROWS[0], Math.min(W - 36, 360))}
+        {renderRow(ROWS[1], Math.min(W - 76, 320))}
+        {renderRow(ROWS[2], Math.min(W - 96, 280), true)}
+      </View>
+    </View>
+  );
 }
 
 export default function LevelPlayScreen({ route, navigation }: Props) {
@@ -318,7 +403,7 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
     );
   }
 
-  const TOTAL = 50; 
+  const TOTAL = 50;
 
   const layout = useMemo(() => {
     const manual = MANUAL_LAYOUTS[level];
@@ -339,19 +424,13 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
 
   const cellSet = useMemo(() => buildCellSet(placed), [placed]);
   const numMap = useMemo(() => buildNumbersMap(placed), [placed]);
-  const { map: answerMap, conflicts } = useMemo(
-    () => buildAnswerMapWithConflictsCheck(placed),
-    [placed],
-  );
+  const { map: answerMap, conflicts } = useMemo(() => buildAnswerMapWithConflictsCheck(placed), [placed]);
 
   const [filled, setFilled] = useState<Record<CellKey, string>>({});
   const [activeNum, setActiveNum] = useState<number>(placed[0]?.num ?? 1);
   const [activeCells, setActiveCells] = useState<Array<{ row: number; col: number }>>([]);
   const [cursor, setCursor] = useState<{ row: number; col: number } | null>(null);
-
-  const inputRef = useRef<TextInput>(null);
-  const lastTextRef = useRef<string>('');
-  const [hiddenText, setHiddenText] = useState('');
+  const [showKeyboard, setShowKeyboard] = useState(false);
 
   const solvedMap = useMemo(() => {
     const m: Record<number, boolean> = {};
@@ -359,31 +438,17 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
     return m;
   }, [placed, filled]);
 
-  const allSolved = useMemo(
-    () => placed.length > 0 && placed.every(w => solvedMap[w.num]),
-    [placed, solvedMap],
-  );
-
-  const focusKeyboard = () => {
-    Keyboard.dismiss();
-    setTimeout(() => inputRef.current?.focus(), Platform.OS === 'android' ? 120 : 60);
-  };
+  const allSolved = useMemo(() => placed.length > 0 && placed.every(w => solvedMap[w.num]), [placed, solvedMap]);
 
   const selectWord = (num: number) => {
     const w = placed.find(x => x.num === num);
     if (!w) return;
 
     setActiveNum(num);
-
     const cells = cellsOfPlacedWord(w.row, w.col, w.dir, w.answer);
     setActiveCells(cells);
-
-    const first = firstEmptyCellInWord(w, filled);
-    setCursor(first);
-
-    lastTextRef.current = '';
-    setHiddenText('');
-    focusKeyboard();
+    setCursor(firstEmptyCellInWord(w, filled));
+    setShowKeyboard(true);
   };
 
   useEffect(() => {
@@ -396,10 +461,8 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
     setActiveCells(cells);
     setCursor(w ? firstEmptyCellInWord(w, {}) : null);
 
-    lastTextRef.current = '';
-    setHiddenText('');
-    setTimeout(() => focusKeyboard(), 250);
-  }, [level]);
+    setShowKeyboard(false);
+  }, [level, placed]);
 
   const moveNext = () => {
     if (!cursor) return;
@@ -442,25 +505,6 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
     });
   };
 
-  const onChangeHidden = (txt: string) => {
-    const prev = lastTextRef.current;
-    lastTextRef.current = txt;
-
-    if (prev.length > txt.length) {
-      backspaceAtCursor();
-      return;
-    }
-
-    const ch = onlyAZLast(txt);
-    if (!ch) return;
-
-    setLetterAtCursor(ch);
-
-    requestAnimationFrame(() => {
-      setHiddenText('');
-      lastTextRef.current = '';
-    });
-  };
   useEffect(() => {
     if (!allSolved) return;
 
@@ -499,59 +543,77 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
     const insideActive = activeCells.some(p => p.row === row && p.col === col);
     if (insideActive) {
       setCursor({ row, col });
-      focusKeyboard();
       return;
     }
 
     const owner = placed.find(w =>
       cellsOfPlacedWord(w.row, w.col, w.dir, w.answer).some(p => p.row === row && p.col === col),
     );
+
     if (owner) {
-      selectWord(owner.num);
+      setActiveNum(owner.num);
+      const cells = cellsOfPlacedWord(owner.row, owner.col, owner.dir, owner.answer);
+      setActiveCells(cells);
       setCursor({ row, col });
       return;
     }
 
     setCursor({ row, col });
-    focusKeyboard();
   };
 
+  const KB_BOTTOM_GAP = insets.bottom + 30;
+  const { kbHeight } = calcKeyboardHeights();
+
+  const headerTop = insets.top + 10;
+  const headerH = 44;
+  const bodyTopPad = IS_TINY ? 14 : 18;
+  const bodyHoriz = 18;
+
+  const clueHeaderH = showKeyboard ? (IS_VERY_SMALL ? 40 : 46) : 0;
+  const spacingBetween = showKeyboard ? (IS_VERY_SMALL ? 10 : 12) : (IS_SMALL ? 14 : 16);
+
+  const reservedHWhenKeyboard =
+    headerTop + headerH + bodyTopPad + spacingBetween + clueHeaderH + kbHeight + KB_BOTTOM_GAP + 10;
+
+  const availableForGrid = showKeyboard ? Math.max(200, H - reservedHWhenKeyboard) : Math.min(H * 0.55, 420);
+
   const size = layout.size;
-  const CARD_W = Math.min(W - 44, 340);
-  const CELL = Math.floor(CARD_W / size);
+
+  const maxGridByWidth = Math.min(W - (bodyHoriz * 2) - 28, 340);
+  const maxGridSide = Math.floor(Math.min(maxGridByWidth, availableForGrid));
+
+  const CELL = Math.max(20, Math.floor(maxGridSide / size));
   const GRID_W = CELL * size;
+
+  const cardOuterW = GRID_W + 28;
+
+  const contentNeedsScroll = showKeyboard && (IS_SMALL || GRID_W > availableForGrid);
 
   return (
     <ImageBackground source={BG} style={styles.bg} resizeMode="cover">
-      <TextInput
-        ref={inputRef}
-        value={hiddenText}
-        onChangeText={onChangeHidden}
-        autoCorrect={false}
-        autoCapitalize="characters"
-        keyboardType={Platform.select({ ios: 'ascii-capable', android: 'visible-password' }) as any}
-        textContentType="none"
-        caretHidden
-        contextMenuHidden
-        showSoftInputOnFocus
-        blurOnSubmit={false}
-        style={styles.hiddenInput}
-      />
-
-      <View style={[styles.header, { marginTop: insets.top + 10 }]}>
+      <View style={[styles.header, { marginTop: headerTop }]}>
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={12}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
 
-        <Text style={styles.title}>
+        <Text style={styles.title} numberOfLines={1}>
           Crossword {dataLevel.id} — {dataLevel.title}
         </Text>
 
         <View style={{ width: 34 }} />
       </View>
 
-      <View style={styles.body}>
-        <Pressable onPress={focusKeyboard} style={[styles.card, { width: GRID_W + 28, padding: 14 }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: bodyTopPad, paddingHorizontal: bodyHoriz, paddingBottom: showKeyboard ? 0 : insets.bottom + 16 },
+        ]}
+        scrollEnabled={contentNeedsScroll}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <View style={[styles.card, { width: cardOuterW, padding: 14, alignSelf: 'center' }]}>
           <View style={{ width: GRID_W, height: GRID_W }}>
             {Array.from({ length: size }).map((_, r) =>
               Array.from({ length: size }).map((__, c) => {
@@ -563,7 +625,7 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
                 const inActive = activeCells.some(p => p.row === r && p.col === c);
 
                 const correct = answerMap.get(key);
-                const isCorrect = correct && val === correct;
+                const isCorrect = !!correct && val === correct;
 
                 return (
                   <Pressable
@@ -586,48 +648,61 @@ export default function LevelPlayScreen({ route, navigation }: Props) {
                       isCorrect && styles.cellCorrect,
                     ]}
                   >
-                    {numMap.has(key) && <Text style={styles.num}>{numMap.get(key)}</Text>}
-                    <Text style={styles.letter}>{val || (isCursor ? '' : '?')}</Text>
+                    {numMap.has(key) && <Text style={[styles.num, { fontSize: Math.max(9, Math.floor(CELL * 0.32)) }]}>{numMap.get(key)}</Text>}
+                    <Text style={[styles.letter, { fontSize: Math.max(14, Math.floor(CELL * 0.58)) }]}>{val || (isCursor ? '' : '?')}</Text>
                   </Pressable>
                 );
               }),
             )}
           </View>
-        </Pressable>
-
-        <View style={styles.cluesWrap}>
-          <ScrollView
-            contentContainerStyle={{ paddingBottom: insets.bottom + 14 }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="always"
-          >
-            {placed
-              .slice()
-              .sort((a, b) => a.num - b.num)
-              .map(w => {
-                const active = w.num === activeNum;
-                const solved = !!solvedMap[w.num];
-                return (
-                  <Pressable
-                    key={w.num}
-                    onPress={() => selectWord(w.num)}
-                    style={[styles.clueBtn, active && styles.clueBtnActive, solved && styles.clueBtnSolved]}
-                  >
-                    <Text style={styles.clueText}>
-                      {w.num}. {w.clue}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-
-            {conflicts.length > 0 && (
-              <Text style={styles.warn}>
-                Layout conflict: answers intersect with different letters. Check word list / layout.
-              </Text>
-            )}
-          </ScrollView>
         </View>
-      </View>
+
+        <View style={[styles.cluesWrap, { marginTop: spacingBetween }]}>
+          {!showKeyboard ? (
+            <View>
+              {placed
+                .slice()
+                .sort((a, b) => a.num - b.num)
+                .map(w => {
+                  const active = w.num === activeNum;
+                  const solved = !!solvedMap[w.num];
+                  return (
+                    <Pressable
+                      key={w.num}
+                      onPress={() => selectWord(w.num)}
+                      style={[styles.clueBtn, active && styles.clueBtnActive, solved && styles.clueBtnSolved]}
+                    >
+                      <Text style={styles.clueText} numberOfLines={2}>
+                        {w.num}. {w.clue}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+              {conflicts.length > 0 && (
+                <Text style={styles.warn}>
+                  Layout conflict: answers intersect with different letters. Check word list / layout.
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View>
+              <View style={styles.kbHeader}>
+                <Text style={styles.kbHeaderText} numberOfLines={2}>
+                  {activeNum}. {placed.find(p => p.num === activeNum)?.clue ?? ''}
+                </Text>
+              </View>
+
+              <KeyboardPanel
+                onKey={setLetterAtCursor}
+                onBackspace={backspaceAtCursor}
+                onConfirm={() => setShowKeyboard(false)}
+                bottomGap={KB_BOTTOM_GAP}
+              />
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </ImageBackground>
   );
 }
@@ -640,6 +715,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    height: 44,
   },
 
   backBtn: {
@@ -654,12 +730,19 @@ const styles = StyleSheet.create({
   },
   backText: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: -1 },
 
-  title: { color: '#8FE6FF', fontWeight: '900', fontSize: 16, textAlign: 'center' },
+  title: {
+    color: '#8FE6FF',
+    fontWeight: '900',
+    fontSize: 16,
+    textAlign: 'center',
+    flex: 1,
+    marginHorizontal: 10,
+  },
 
-  body: { flex: 1, paddingTop: IS_TINY ? 14 : 18, paddingHorizontal: 18 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 0 },
 
   card: {
-    alignSelf: 'center',
     borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
@@ -688,19 +771,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 5,
     top: 3,
-    fontSize: 10,
     color: 'rgba(255,255,255,0.85)',
     fontWeight: '900',
   },
 
   letter: {
-    fontSize: 16,
     fontWeight: '900',
     color: '#fff',
     marginTop: 2,
   },
 
-  cluesWrap: { flex: 1, marginTop: IS_SMALL ? 14 : 16 },
+  cluesWrap: { flex: 1 },
 
   clueBtn: {
     minHeight: 44,
@@ -729,15 +810,79 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
 
-  hiddenInput: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 44,
-    opacity: 0.02,
-  },
-
   centerMsg: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
   msgText: { color: 'rgba(255,255,255,0.75)', textAlign: 'center', fontSize: 13, lineHeight: 18 },
+
+  kbHeader: {
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 12,
+    paddingVertical: IS_VERY_SMALL ? 6 : 8,
+    marginBottom: IS_VERY_SMALL ? 6 : 8,
+  },
+  kbHeaderText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: IS_VERY_SMALL ? 11 : 12,
+    lineHeight: IS_VERY_SMALL ? 14 : 16,
+    opacity: 0.95,
+  },
+
+  kbWrapCompact: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+
+  kbTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  kbActionBtn: {
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kbActionText: { color: '#fff', fontWeight: '900', marginTop: -1 },
+
+  kbConfirmBtn: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: '#F4B63A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  kbConfirmText: { color: '#2A1906', fontWeight: '900' },
+
+  kbRowNoWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  kbKeyFlex: {
+    flex: 1,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kbKeyText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    marginTop: 1,
+  },
 });
